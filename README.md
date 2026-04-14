@@ -12,7 +12,7 @@ pip install -r requirements.txt
 
 ## 🗺️ Roadmap
 
-- [] dataset processing
+- [ ] dataset processing
 - [ ] modeling
 
 - [ ] 
