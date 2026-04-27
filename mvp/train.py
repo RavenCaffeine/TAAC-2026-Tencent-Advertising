@@ -18,14 +18,10 @@ from typing import List, Tuple
 
 import torch
 
-# Import from training/ (shared code) and mvp/ (improved code)
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'training'))
-
+# All files (dataset.py, utils.py, model.py, trainer.py) should be in the
+# same directory as this script, making the submission self-contained.
 from utils import set_seed, EarlyStopping, create_logger
 from dataset import FeatureSchema, get_pcvr_data, NUM_TIME_BUCKETS
-
-# Use MVP model and trainer
 from model import PCVRHyFormer
 from trainer import PCVRHyFormerRankingTrainer
 

@@ -8,9 +8,9 @@
 # - Gradient accumulation for effective larger batch
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export PYTHONPATH="${SCRIPT_DIR}:${SCRIPT_DIR}/../training:${PYTHONPATH}"
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
 
-python3 -u "${SCRIPT_DIR}/../training/train.py" \
+python3 -u "${SCRIPT_DIR}/train.py" \
     --ns_tokenizer_type rankmixer \
     --user_ns_tokens 5 \
     --item_ns_tokens 2 \
@@ -51,14 +51,5 @@ python3 -u "${SCRIPT_DIR}/../training/train.py" \
 # 7. use_rope: enabled (positional encoding for sequence attention)
 # 8. eval_every_n_steps: 3000 (more frequent validation for early stopping)
 #
-# To use the improved trainer.py with AMP and LR schedule, modify train.py
-# to import from mvp.trainer instead of trainer, or copy mvp/trainer.py
-# over training/trainer.py.
-#
-# For the improved model with Target-Aware Attention and Cross-Domain
-# Interaction, similarly swap mvp/model.py for training/model.py.
-# Note: the MVP model has additional constructor args
-# (enable_cross_domain, enable_target_aware) that train.py doesn't pass
-# by default. You'll need to either:
-#   a) Add these flags to train.py's argparse, or
-#   b) Edit the model_args dict in train.py to include them.
+# This script calls mvp/train.py, which imports mvp/model.py and mvp/trainer.py
+# while reusing dataset.py and utils.py from training/.
