@@ -306,6 +306,44 @@ class TargetAwareQueryGenerator(nn.Module):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
+class MultiSeqQueryGenerator(nn.Module):
+    """Baseline-style query generator for target-aware ablations."""
+
+    def __init__(self, d_model, num_ns, num_queries, num_sequences, hidden_mult=4):
+        super().__init__()
+        self.num_queries = num_queries
+        self.num_sequences = num_sequences
+        global_info_dim = (num_ns + 1) * d_model
+        self.global_info_norm = nn.LayerNorm(global_info_dim)
+        self.query_ffns_per_seq = nn.ModuleList([
+            nn.ModuleList([
+                nn.Sequential(
+                    nn.Linear(global_info_dim, d_model * hidden_mult),
+                    nn.SiLU(),
+                    nn.Linear(d_model * hidden_mult, d_model),
+                    nn.LayerNorm(d_model),
+                )
+                for _ in range(num_queries)
+            ])
+            for _ in range(num_sequences)
+        ])
+
+    def forward(self, ns_tokens, seq_tokens_list, seq_padding_masks):
+        B = ns_tokens.shape[0]
+        ns_flat = ns_tokens.view(B, -1)
+        q_tokens_list = []
+        for i in range(self.num_sequences):
+            valid_mask = ~seq_padding_masks[i]
+            valid_mask_expanded = valid_mask.unsqueeze(-1).float()
+            seq_sum = (seq_tokens_list[i] * valid_mask_expanded).sum(dim=1)
+            seq_count = valid_mask_expanded.sum(dim=1).clamp(min=1)
+            seq_pooled = seq_sum / seq_count
+            global_info = self.global_info_norm(torch.cat([ns_flat, seq_pooled], dim=-1))
+            queries = [ffn(global_info) for ffn in self.query_ffns_per_seq[i]]
+            q_tokens_list.append(torch.stack(queries, dim=1))
+        return q_tokens_list
+
+
 class CrossDomainInteraction(nn.Module):
     """Enables Q tokens from different sequence domains to interact.
 
@@ -832,12 +870,9 @@ class PCVRHyFormer(nn.Module):
                 hidden_mult=hidden_mult,
             )
         else:
-            # Fallback to baseline-compatible generator
-            from types import SimpleNamespace
-            self.query_generator = TargetAwareQueryGenerator(
+            self.query_generator = MultiSeqQueryGenerator(
                 d_model=d_model,
-                num_user_ns=self.num_user_ns,
-                num_item_ns=self.num_item_ns,
+                num_ns=self.num_ns,
                 num_queries=num_queries,
                 num_sequences=self.num_sequences,
                 hidden_mult=hidden_mult,
@@ -1049,6 +1084,73 @@ class PCVRHyFormer(nn.Module):
         return logits
 
     def predict(self, inputs: ModelInput) -> Tuple[torch.Tensor, torch.Tensor]:
+        user_ns = self.user_ns_tokenizer(inputs.user_int_feats)
+        item_ns = self.item_ns_tokenizer(inputs.item_int_feats)
+
+        ns_parts = [user_ns]
+        if self.has_user_dense:
+            user_dense_tok = F.silu(self.user_dense_proj(inputs.user_dense_feats)).unsqueeze(1)
+            ns_parts.append(user_dense_tok)
+        ns_parts.append(item_ns)
+        if self.has_item_dense:
+            item_dense_tok = F.silu(self.item_dense_proj(inputs.item_dense_feats)).unsqueeze(1)
+            ns_parts.append(item_dense_tok)
+        ns_tokens = torch.cat(ns_parts, dim=1)
+
+        seq_tokens_list = []
+        seq_masks_list = []
+        for domain in self.seq_domains:
+            tokens = self._embed_seq_domain(
+                inputs.seq_data[domain], self._seq_embs[domain],
+                self._seq_proj[domain], self._seq_is_id[domain],
+                self._seq_emb_index[domain], inputs.seq_time_buckets[domain])
+            seq_tokens_list.append(tokens)
+            mask = self._make_padding_mask(inputs.seq_lens[domain],
+                                           inputs.seq_data[domain].shape[2])
+            seq_masks_list.append(mask)
+
+        q_tokens_list = self.query_generator(ns_tokens, seq_tokens_list, seq_masks_list)
+
+        output = self._run_multi_seq_blocks(
+            q_tokens_list, ns_tokens, seq_tokens_list, seq_masks_list,
+            apply_dropout=False)
+
+        logits = self.clsfier(output)
+        return logits, outputensor]:
+        user_ns = self.user_ns_tokenizer(inputs.user_int_feats)
+        item_ns = self.item_ns_tokenizer(inputs.item_int_feats)
+
+        ns_parts = [user_ns]
+        if self.has_user_dense:
+            user_dense_tok = F.silu(self.user_dense_proj(inputs.user_dense_feats)).unsqueeze(1)
+            ns_parts.append(user_dense_tok)
+        ns_parts.append(item_ns)
+        if self.has_item_dense:
+            item_dense_tok = F.silu(self.item_dense_proj(inputs.item_dense_feats)).unsqueeze(1)
+            ns_parts.append(item_dense_tok)
+        ns_tokens = torch.cat(ns_parts, dim=1)
+
+        seq_tokens_list = []
+        seq_masks_list = []
+        for domain in self.seq_domains:
+            tokens = self._embed_seq_domain(
+                inputs.seq_data[domain], self._seq_embs[domain],
+                self._seq_proj[domain], self._seq_is_id[domain],
+                self._seq_emb_index[domain], inputs.seq_time_buckets[domain])
+            seq_tokens_list.append(tokens)
+            mask = self._make_padding_mask(inputs.seq_lens[domain],
+                                           inputs.seq_data[domain].shape[2])
+            seq_masks_list.append(mask)
+
+        q_tokens_list = self.query_generator(ns_tokens, seq_tokens_list, seq_masks_list)
+
+        output = self._run_multi_seq_blocks(
+            q_tokens_list, ns_tokens, seq_tokens_list, seq_masks_list,
+            apply_dropout=False)
+
+        logits = self.clsfier(output)
+        return logits, output
+Tensor]:
         user_ns = self.user_ns_tokenizer(inputs.user_int_feats)
         item_ns = self.item_ns_tokenizer(inputs.item_int_feats)
 
