@@ -18,22 +18,24 @@ python3 -u "${SCRIPT_DIR}/train.py" \
     --ns_groups_json "" \
     --emb_skip_threshold 1000000 \
     --num_workers 8 \
-    --d_model 128 \
+    --d_model 64 \
     --emb_dim 64 \
-    --num_hyformer_blocks 3 \
-    --num_heads 8 \
+    --num_hyformer_blocks 2 \
+    --num_heads 4 \
     --hidden_mult 4 \
-    --dropout_rate 0.02 \
+    --dropout_rate 0.01 \
     --seq_encoder_type transformer \
-    --seq_max_lens "seq_a:256,seq_b:256,seq_c:512,seq_d:512" \
+    --seq_max_lens "seq_a:128,seq_b:128,seq_c:256,seq_d:256" \
     --batch_size 256 \
-    --lr 2e-4 \
+    --gradient_accumulation_steps 1 \
+    --lr 1e-4 \
     --sparse_lr 0.05 \
     --loss_type bce \
     --rank_mixer_mode ffn_only \
     --use_rope \
+    --no_amp \
     --patience 5 \
-    --eval_every_n_steps 3000 \
+    --eval_every_n_steps 0 \
     "$@"
 
 # ═══════════════════════════════════════════════════════════════════════════════
